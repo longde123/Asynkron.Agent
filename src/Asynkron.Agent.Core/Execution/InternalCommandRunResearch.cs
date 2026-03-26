@@ -68,7 +68,7 @@ internal static class InternalCommandRunResearch
             {
                 try
                 {
-                    await subAgent.Run(runCtx);
+                    await subAgent.RunAsync(runCtx);
                 }
                 catch
                 {
