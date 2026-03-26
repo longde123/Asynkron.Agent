@@ -28,7 +28,8 @@ public sealed partial class Runtime
     // Returning retry=true signals that the helper produced feedback for the
     // assistant and the runtime should request a new plan immediately.
     private async Task<(PlanResponse? plan, bool retry, Exception? error)> ValidatePlanToolCall(
-        ToolCall toolCall, 
+        ToolCall toolCall,
+        ApiVersion apiVersion,
         CancellationToken cancellationToken)
     {
         var trimmedArgs = toolCall.Arguments.Trim();
@@ -41,7 +42,7 @@ public sealed partial class Runtime
                 Summary = "Assistant called the tool without providing arguments.",
                 Details = "tool arguments were empty"
             };
-            HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload));
+            HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload, apiVersion));
             return (null, true, null);
         }
         
@@ -59,7 +60,7 @@ public sealed partial class Runtime
                 Summary = "Tool call arguments were not valid JSON.",
                 Details = err.Message
             };
-            HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload));
+            HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload, apiVersion));
             return (null, true, null);
         }
         
@@ -68,15 +69,15 @@ public sealed partial class Runtime
         {
             if (schemaErr is SchemaValidationError schemaValidationErr)
             {
-                var payload = new PlanObservationPayload
-                {
-                    SchemaValidationError = true,
-                    ResponseValidationError = true,
-                    Summary = "Tool call arguments failed schema validation.",
-                    Details = schemaValidationErr.Message
-                };
-                HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload));
-                return (null, true, null);
+            var payload = new PlanObservationPayload
+            {
+                SchemaValidationError = true,
+                ResponseValidationError = true,
+                Summary = "Tool call arguments failed schema validation.",
+                Details = schemaValidationErr.Message
+            };
+            HandlePlanValidationFailure(toolCall, payload, BuildValidationAutoPrompt(payload, apiVersion));
+            return (null, true, null);
             }
             // Non-schema validation error (e.g., schema loading error)
             return (null, false, new Exception($"validatePlanToolCall: schema validation error: {schemaErr.Message}", schemaErr));
@@ -237,7 +238,7 @@ public sealed partial class Runtime
         }
     }
     
-    private static string BuildValidationAutoPrompt(PlanObservationPayload payload)
+    private static string BuildValidationAutoPrompt(PlanObservationPayload payload, ApiVersion apiVersion)
     {
         var summary = payload.Summary.Trim();
         if (string.IsNullOrEmpty(summary))
@@ -253,7 +254,13 @@ public sealed partial class Runtime
             builder.Append(" Details: ");
             builder.Append(details);
         }
-        builder.Append(" Please call ");
+        
+        // 添加 API 版本信息
+        builder.Append(" Current API Version: ");
+        builder.Append(apiVersion == ApiVersion.Responses ? "Responses API" : "Chat Completions API");
+        builder.Append(". ");
+        
+        builder.Append("Please call ");
         builder.Append(PlanSchema.ToolName);
         builder.Append(" again with JSON that strictly matches the provided schema.");
         return builder.ToString();

@@ -7,6 +7,22 @@ using MSLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Asynkron.Agent.Core.Runtime;
 
+/// <summary>
+/// ApiVersion specifies which OpenAI API version to use.
+/// </summary>
+public enum ApiVersion
+{
+    /// <summary>
+    /// Use the modern Responses API (/v1/responses). This is the default.
+    /// </summary>
+    Responses,
+    
+    /// <summary>
+    /// Use the legacy Chat Completions API (/v1/chat/completions).
+    /// </summary>
+    ChatCompletions
+}
+
 
 
 /// <summary>
@@ -21,6 +37,7 @@ public sealed record RuntimeOptions
     public string ApiKey { get; init; } = "";
     public string ApiBaseUrl { get; init; } = "";
     public string Model { get; init; } = "gpt-4.1";
+    public ApiVersion ApiVersion { get; init; } = ApiVersion.Responses;
     public string ReasoningEffort { get; init; } = "";
     public string SystemPromptAugment { get; init; } = "";
     public int AmnesiaAfterPasses { get; init; }

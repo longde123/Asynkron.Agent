@@ -253,7 +253,7 @@ public sealed partial class Runtime
 
                 try
                 {
-                    toolCall = await _client.RequestPlanStreamingResponsesAsync(ctx, history, StreamFn);
+                    toolCall = await _client.RequestPlanStreamingAsync(ctx, history, StreamFn);
                 }
                 catch (Exception ex)
                 {
@@ -293,7 +293,10 @@ public sealed partial class Runtime
                 return (null, null, new Exception($"requestPlan: API request failed: {err.Message}", err));
             }
 
-            var validationResult = await ValidatePlanToolCall(toolCall, ctx);
+            var validationResult = await ValidatePlanToolCall(
+                toolCall, 
+                _options.ApiVersion, 
+                ctx);
             var plan = validationResult.Item1;
             var retry = validationResult.Item2;
             var validationErr = validationResult.Item3;

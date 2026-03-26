@@ -15,7 +15,7 @@ namespace Asynkron.Agent.Core.Runtime;
 /// <summary>
 /// OpenAIClient wraps the HTTP client required to call the OpenAI Responses API.
 /// </summary>
-public sealed class OpenAIClient
+public sealed class OpenAIClient : IOpenAIClient
 {
     private readonly string _apiKey;
     private readonly string _model;
@@ -67,7 +67,19 @@ public sealed class OpenAIClient
     public Task<ToolCall> RequestPlanAsync(CancellationToken ctx, List<ChatMessage> history)
     {
         // Non-streaming path reuses the Responses API implementation without emitting deltas.
-        return RequestPlanStreamingResponsesAsync(ctx, history, null);
+        return RequestPlanStreamingAsync(ctx, history, null);
+    }
+
+    /// <summary>
+    /// RequestPlanStreamingAsync implements the IOpenAIClient interface by delegating
+    /// to the Responses API specific streaming method.
+    /// </summary>
+    public Task<ToolCall> RequestPlanStreamingAsync(
+        CancellationToken ctx,
+        List<ChatMessage> history,
+        Action<string>? onDelta)
+    {
+        return RequestPlanStreamingResponsesAsync(ctx, history, onDelta);
     }
 
     /// <summary>

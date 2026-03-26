@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Threading.Channels;
+using Asynkron.Agent.Core.Schema;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -23,7 +24,7 @@ public sealed partial class Runtime
     private readonly CancellationTokenSource _closedCts = new();
     
     private readonly PlanManager _plan;
-    private readonly OpenAIClient _client;
+    private readonly IOpenAIClient _client;
     private CommandExecutor? _executor;
     private readonly SemaphoreSlim _commandMu = new(1, 1);
     
@@ -45,7 +46,7 @@ public sealed partial class Runtime
     // so it can be closed when the runtime shuts down.
     private IDisposable? _logFileCloser;
 
-    private Runtime(RuntimeOptions options, OpenAIClient client)
+    private Runtime(RuntimeOptions options, IOpenAIClient client)
     {
         _options = options;
         _logger = options.Logger ?? NullLogger.Instance;
@@ -93,15 +94,32 @@ public sealed partial class Runtime
             httpTimeout = TimeSpan.FromSeconds(120);
         }
         
-        var client = new OpenAIClient(
-            options.ApiKey,
-            options.Model,
-            options.ReasoningEffort,
-            options.ApiBaseUrl,
-            options.Logger ?? NullLogger.Instance,
-            options.ApiRetryConfig,
-            httpTimeout
-        );
+        // Create the appropriate OpenAI client based on ApiVersion
+        IOpenAIClient client;
+        if (options.ApiVersion == ApiVersion.ChatCompletions)
+        {
+            client = new LegacyOpenAIClient(
+                options.ApiKey,
+                options.Model,
+                options.ApiBaseUrl,
+                options.Logger ?? NullLogger.Instance,
+                options.ApiRetryConfig,
+                httpTimeout
+            );
+        }
+        else
+        {
+            // Default to Responses API
+            client = new OpenAIClient(
+                options.ApiKey,
+                options.Model,
+                options.ReasoningEffort,
+                options.ApiBaseUrl,
+                options.Logger ?? NullLogger.Instance,
+                options.ApiRetryConfig,
+                httpTimeout
+            );
+        }
         
         var rt = new Runtime(options, client);
         
@@ -398,18 +416,18 @@ public sealed partial class Runtime
                     await Close();
                     return err;
                 }
-        }
-        catch (ChannelClosedException)
-        {
-            await Close();
-            return null;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _logger.LogWarning("Context cancelled, shutting down runtime");
-            Emit(new RuntimeEvent
+            }
+            catch (ChannelClosedException)
             {
-                Type = EventType.Status,
+                await Close();
+                return null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Context cancelled, shutting down runtime");
+                Emit(new RuntimeEvent
+                {
+                    Type = EventType.Status,
                     Message = "Context cancelled. Shutting down runtime.",
                     Level = StatusLevel.Warn
                 });
@@ -548,7 +566,7 @@ public sealed partial class Runtime
                 
                 try
                 {
-                    toolCall = await _client.RequestPlanStreamingResponsesAsync(cancellationToken, history, StreamFn);
+                    toolCall = await _client.RequestPlanStreamingAsync(cancellationToken, history, StreamFn);
                     err = null;
                     // After streaming completes (no error), emit a final assistant message
                     // with the consolidated content so hosts that don't handle deltas can
@@ -586,7 +604,10 @@ public sealed partial class Runtime
                 return (null, null, new Exception($"requestPlan: API request failed: {err.Message}", err));
             }
             
-            var (plan, retry, validationErr) = await ValidatePlanToolCall(toolCall, cancellationToken);
+            var (plan, retry, validationErr) = await ValidatePlanToolCall(
+                toolCall, 
+                _options.ApiVersion, 
+                cancellationToken);
             if (validationErr != null)
             {
                 _logger.LogError(validationErr, "Plan validation failed. ToolCallId={ToolCallId}", toolCall.ID);
